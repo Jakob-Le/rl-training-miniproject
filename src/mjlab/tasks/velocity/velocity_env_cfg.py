@@ -283,7 +283,7 @@ def create_velocity_env_cfg(
     "upright": RewardTermCfg(
       func=mdp.flat_orientation,
       weight=1.0,
-      params={"std": math.sqrt(0.2)},
+      params={"std": math.sqrt(0.2), "asset_cfg": SceneEntityCfg("robot", body_ids=[0])},
     ),
     "default_joint_pos": RewardTermCfg(
       func=mdp.variable_posture,

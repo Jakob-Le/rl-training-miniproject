@@ -83,10 +83,7 @@ def flat_orientation(
   asset: Entity = env.scene[asset_cfg.name]
 
   # If body_ids are specified, compute projected gravity for that body.
-  #if asset_cfg.body_ids:
-  use_body_subset = isinstance(asset_cfg.body_ids, list) and len(asset_cfg.body_ids) > 0
-
-  if use_body_subset:
+  if asset_cfg.body_ids:
     body_quat_w = asset.data.body_link_quat_w[:, asset_cfg.body_ids, :]  # [B, N, 4]
     body_quat_w = body_quat_w.squeeze(1)  # [B, 4]
     gravity_w = asset.data.gravity_vec_w  # [3]
