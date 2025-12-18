@@ -336,6 +336,7 @@ def create_velocity_env_cfg(
         "sensor_name": feet_sensor_cfg.name,
         "target_height": 0.1,
         "command_name": "twist",
+        "command_threshold": 0.01,
         "asset_cfg": SceneEntityCfg("robot", site_names=site_names),
       },
     ),
