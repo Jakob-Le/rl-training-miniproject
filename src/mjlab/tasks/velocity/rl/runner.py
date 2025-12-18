@@ -13,6 +13,18 @@ from mjlab.tasks.velocity.rl.exporter import (
 class VelocityOnPolicyRunner(OnPolicyRunner):
   env: RslRlVecEnvWrapper
 
+
+  def __init__(
+    self,
+    env,
+    train_cfg: dict,
+    log_dir: str | None = None,
+    device: str = "cpu",
+  ) -> None:
+    super().__init__(env, train_cfg, log_dir, device)
+    # Keep track of the requested logger backend for exporting artifacts.
+    self.logger_type = train_cfg.get("logger", "tensorboard")
+
   def save(self, path: str, infos=None):
     """Save the model and training information."""
     super().save(path, infos)
