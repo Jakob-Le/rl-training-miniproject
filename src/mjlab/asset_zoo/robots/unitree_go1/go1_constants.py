@@ -21,7 +21,7 @@ from mjlab.utils.spec_config import CollisionCfg
 
 # TODO: Load the correct "go1.xml" file for your setup.
 GO1_XML: Path = (
-  MJLAB_SRC_PATH / "asset_zoo" / "robots" / "unitree_go1" / ???????
+   MJLAB_SRC_PATH / "asset_zoo" / "robots" / "unitree_go1" / "xmls" / "go1.xml"
 )
 assert GO1_XML.exists(), f"GO1 XML not found at {GO1_XML}"
 
@@ -57,21 +57,21 @@ KNEE_GEAR_RATIO = HIP_GEAR_RATIO * 1.5
 #--------------------------------------------------------------------------#
 
 HIP_ACTUATOR = ElectricActuator(
-  reflected_inertia=,   # TODO: calculate armature based on rotor inertia and gear ratios
-  velocity_limit=,      # TODO: Insert max joint velocity (rad/s).
-  effort_limit=,        # TODO: Insert torque limit (Nm).
+  reflected_inertia=reflected_inertia(ROTOR_INERTIA, HIP_GEAR_RATIO),
+  velocity_limit=30.1,
+  effort_limit=23.7,
 )
 
 KNEE_ACTUATOR = ElectricActuator(
-  reflected_inertia=,   # TODO: calculate armature based on rotor inertia and gear ratios
-  velocity_limit=,      # TODO: Insert max joint velocity (rad/s).
-  effort_limit=,        # TODO: Insert torque limit (Nm).
+  reflected_inertia=reflected_inertia(ROTOR_INERTIA, KNEE_GEAR_RATIO),
+  velocity_limit=20.06,
+  effort_limit=35.55,
 )
 
 # Natural frequency and damping ratio for PD-like actuator behavior.
 # These are typical choices for stable position-control hardware.
-NATURAL_FREQ = ????? * 2.0 * 3.1415926535   # 10 Hz stiffness shaping
-DAMPING_RATIO = ??????                    # Critically damped-ish behavior
+NATURAL_FREQ = 10 * 2.0 * 3.1415926535   # 10 Hz stiffness shaping
+DAMPING_RATIO = 2.0                    # Critically damped-ish behavior
 
 #--------------------------------------------------------------------------#
 # We provide a heuristic formula to compute PD gains as follows,
@@ -79,11 +79,11 @@ DAMPING_RATIO = ??????                    # Critically damped-ish behavior
 # for both hip and knee actuators.
 #--------------------------------------------------------------------------#
 
-STIFFNESS_HIP = ????    
-DAMPING_HIP = ????     
+STIFFNESS_HIP = HIP_ACTUATOR.reflected_inertia * NATURAL_FREQ**2
+DAMPING_HIP = 2.0 * DAMPING_RATIO * HIP_ACTUATOR.reflected_inertia * NATURAL_FREQ  
 
-STIFFNESS_KNEE = ????   
-DAMPING_KNEE = ????     
+STIFFNESS_KNEE = KNEE_ACTUATOR.reflected_inertia * NATURAL_FREQ**2
+DAMPING_KNEE = 2.0 * DAMPING_RATIO * KNEE_ACTUATOR.reflected_inertia * NATURAL_FREQ
 
 # Builtin PD position actuators for hip and knee joints.
 GO1_HIP_ACTUATOR_CFG = BuiltinPositionActuatorCfg(
@@ -193,4 +193,4 @@ for a in GO1_ARTICULATION.actuators:
   names = a.joint_names_expr
   assert e is not None
   for n in names:
-    GO1_ACTION_SCALE[n] = ???????
+    GO1_ACTION_SCALE[n] = 0.25 * e / s

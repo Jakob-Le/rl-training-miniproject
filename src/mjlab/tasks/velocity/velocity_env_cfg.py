@@ -123,7 +123,19 @@ def create_velocity_env_cfg(
   # The task is to track a desired linear and yaw velocity (twist).
   # Hint: use a `UniformVelocityCommandCfg`.
   commands: dict[str, CommandTermCfg] = {
-    "twist": UniformVelocityCommandCfg()
+      "twist": UniformVelocityCommandCfg(
+      asset_name="robot",
+      resampling_time_range=(3.0, 8.0),
+      heading_command=True,
+      rel_standing_envs=0.1,
+      rel_heading_envs=0.3,
+      ranges=UniformVelocityCommandCfg.Ranges(
+        lin_vel_x=(-1.0, 1.0),
+        lin_vel_y=(-1.0, 1.0),
+        ang_vel_z=(-1.0, 1.0),
+        heading=(-math.pi, math.pi),
+      ),
+    )
   }
 
   # ---------------------------------------------------------------------------
@@ -138,7 +150,28 @@ def create_velocity_env_cfg(
       func=mdp.joint_pos_rel,
       noise=Unoise(n_min=-0.01, n_max=0.01), # Define sensor noise range
     ),
-    ........... # add more terms here
+    "joint_vel": ObservationTermCfg(
+      func=mdp.joint_vel_rel,
+      noise=Unoise(n_min=-1.5, n_max=1.5),
+    ),
+    "base_lin_vel": ObservationTermCfg(
+      func=mdp.base_lin_vel,
+      noise=Unoise(n_min=-0.5, n_max=0.5),
+    ),
+    "base_ang_vel": ObservationTermCfg(
+      func=mdp.base_ang_vel,
+      noise=Unoise(n_min=-0.2, n_max=0.2),
+    ),
+    "projected_gravity": ObservationTermCfg(
+      func=mdp.projected_gravity,
+      noise=Unoise(n_min=-0.05, n_max=0.05),
+    ),
+    "last_action": ObservationTermCfg(
+      func=mdp.last_action, params={"action_name": "joint_pos"}
+    ),
+    "command": ObservationTermCfg(
+      func=mdp.generated_commands, params={"command_name": "twist"}
+    ), # add more terms here
   }
 
   critic_terms = {
@@ -154,12 +187,12 @@ def create_velocity_env_cfg(
     "policy": ObservationGroupCfg(
       terms=policy_terms,
       concatenate_terms=True,
-      enable_corruption=??????,
+      enable_corruption=True,
     ),
     "critic": ObservationGroupCfg(
       terms=critic_terms,
       concatenate_terms=True,
-      enable_corruption=?????, 
+      enable_corruption=False,
     ),
   }
 
@@ -195,19 +228,25 @@ def create_velocity_env_cfg(
     # (1) Randomize the ground friction of the feet using `mdp.randomize_field`.
     "foot_friction": EventTermCfg(
       mode="startup",
-      func=,
+      func=mdp.randomize_field,
       domain_randomization=True,
-      params={},
+      params={
+        "field": "geom_friction",
+        "ranges": (0.3, 1.2),
+        "asset_cfg": SceneEntityCfg(
+          "robot", geom_names=foot_friction_geom_names
+        ),
+      },
     ),
 
 
 
     # (2) Add random velocity perturbations to the base to learn recovery behaviorusing `mdp.push_by_setting_velocity`.
     "push_robot": EventTermCfg(
-      func=,
+      func=mdp.push_by_setting_velocity,
       mode="interval",
       interval_range_s=(1.0, 3.0),
-      params={},
+      params={"velocity_range": {"x": (-0.5, 0.5), "y": (-0.5, 0.5)}},
     ),
   }
 
@@ -222,14 +261,14 @@ def create_velocity_env_cfg(
     # Hint: track commanded linear and angular velocity.
 
     "track_linear_velocity": RewardTermCfg(
-      func=,
+      func=mdp.track_linear_velocity,
       weight=2.0,
-      params={},
+      params={"std": math.sqrt(0.25), "command_name": "twist"},
     ),
     "track_angular_velocity": RewardTermCfg(
-      func=,
+      func=mdp.track_angular_velocity,
       weight=2.0,
-      params={},
+      params={"std": math.sqrt(0.25), "command_name": "twist"},
     ),
 
     # -------------------------------------------------------------------------
@@ -242,26 +281,30 @@ def create_velocity_env_cfg(
     # 2. penalizing large deviations from default joint positions
 
     "upright": RewardTermCfg(
-      func=,
+      func=mdp.flat_orientation,
       weight=1.0,
-      params={
-      },
+      params={"std": math.sqrt(0.2)},
     ),
     "default_joint_pos": RewardTermCfg(
-      func=,
+      func=mdp.variable_posture,
       weight=-0.1,
       params={
+        "asset_cfg": SceneEntityCfg("robot", joint_names=(".*",)),
+        "std_standing": posture_std_standing,
+        "std_walking": posture_std_walking,
+        "std_running": posture_std_running,
+        "command_name": "twist",
       },
     ),
     # To prevent reaching physical limits and encourage smooth actions, consider adding terms such as:
     # 3. penalizing norm of action rate
     # 4. penalizing reaching the joint position limits
     "action_rate": RewardTermCfg(
-      func=, 
+      func=mdp.action_rate_l2,
       weight=-0.1
     ),
     "dof_pos_limits": RewardTermCfg(
-      func=, 
+      func=mdp.joint_pos_limits,
       weight=-1.0
     ),
     # -------------------------------------------------------------------------
@@ -277,6 +320,34 @@ def create_velocity_env_cfg(
     # 1. foot_clearance with mdp.feet_clearance
     # 2. foot_swing_height with mdp.feet_swing_height
     # 3. foot_slip with mdp.feet_slip
+    "foot_clearance": RewardTermCfg(
+      func=mdp.feet_clearance,
+      weight=-0.2,
+      params={
+        "target_height": 0.05,
+        "command_name": "twist",
+        "asset_cfg": SceneEntityCfg("robot", site_names=site_names),
+      },
+    ),
+    "foot_swing_height": RewardTermCfg(
+      func=mdp.feet_swing_height,
+      weight=-0.2,
+      params={
+        "sensor_name": feet_sensor_cfg.name,
+        "target_height": 0.1,
+        "command_name": "twist",
+        "asset_cfg": SceneEntityCfg("robot", site_names=site_names),
+      },
+    ),
+    "foot_slip": RewardTermCfg(
+      func=mdp.feet_slip,
+      weight=-0.5,
+      params={
+        "sensor_name": feet_sensor_cfg.name,
+        "command_name": "twist",
+        "asset_cfg": SceneEntityCfg("robot", site_names=site_names),
+      },
+    ),
   }
 
   # ---------------------------------------------------------------------------
@@ -291,9 +362,9 @@ def create_velocity_env_cfg(
       time_out=True,
     ),
     "fell_over": TerminationTermCfg(
-      func=,
+      func=mdp.bad_orientation,
       time_out=False,
-      params={},
+      params={"limit_angle": math.radians(60)},
     ),
   }
 
