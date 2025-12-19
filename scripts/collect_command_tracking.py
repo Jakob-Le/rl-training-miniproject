@@ -14,6 +14,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Optional
 
+import sys
+
 import torch
 import tyro
 
@@ -107,4 +109,14 @@ def main(args: Args) -> None:
 
 
 if __name__ == "__main__":
-  tyro.cli(main)
+  # Accept both ``--checkpoint_file`` (notebook-style) and ``--checkpoint-file``
+  # (Tyro's default) by normalizing underscores to hyphens before parsing.
+  normalized_args = []
+  for arg in sys.argv[1:]:
+    if arg.startswith("--"):
+      name, *rest = arg[2:].split("=", 1)
+      name = name.replace("_", "-")
+      arg = "--" + name + ("=" + rest[0] if rest else "")
+    normalized_args.append(arg)
+
+  tyro.cli(main, args=normalized_args)
