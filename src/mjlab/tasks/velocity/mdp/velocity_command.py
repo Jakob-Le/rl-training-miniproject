@@ -214,7 +214,6 @@ class ScriptedVelocityCommand(UniformVelocityCommand):
 
     self._advance_sequence(env_ids)
 
-
 @dataclass(kw_only=True)
 class UniformVelocityCommandCfg(CommandTermCfg):
   asset_name: str

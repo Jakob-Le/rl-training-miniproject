@@ -115,6 +115,15 @@ def _apply_velocity_command_profile(
     (0.5, 0.0, 0.3, 125),
   )
 
+  # Disable heading commands for the scripted profile; strip heading ranges to avoid
+  # validation failures in UniformVelocityCommand when heading_command=False.
+  ranges = UniformVelocityCommandCfg.Ranges(
+    lin_vel_x=twist_cfg.ranges.lin_vel_x,
+    lin_vel_y=twist_cfg.ranges.lin_vel_y,
+    ang_vel_z=twist_cfg.ranges.ang_vel_z,
+    heading=None,
+  )
+
   cfg.commands["twist"] = ScriptedVelocityCommandCfg(
     asset_name=twist_cfg.asset_name,
     heading_command=False,
@@ -123,10 +132,11 @@ def _apply_velocity_command_profile(
     rel_heading_envs=0.0,
     init_velocity_prob=0.0,
     resampling_time_range=(0.0, 0.0),
-    ranges=twist_cfg.ranges,
+    ranges=ranges,
     sequence=deliverable_sequence,
     loop_sequence=True,
   )
+
 
 
 
