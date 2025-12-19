@@ -6,9 +6,11 @@ from dataclasses import asdict, dataclass
 from datetime import datetime
 from pathlib import Path
 from typing import Any, cast
+import csv
 
 import tyro
 from rsl_rl.runners import OnPolicyRunner
+from tensorboard.backend.event_processing.event_accumulator import EventAccumulator
 
 from mjlab.envs import ManagerBasedRlEnv
 from mjlab.rl import RslRlOnPolicyRunnerCfg, RslRlVecEnvWrapper
@@ -138,9 +140,55 @@ def run_train(task_id: str, cfg: TrainConfig) -> None:
     num_learning_iterations=cfg.agent.max_iterations, init_at_random_ep_len=True
   )
 
+  if runner.logger.log_dir is not None and not runner.logger.disable_logs:
+    export_training_curves(Path(runner.logger.log_dir))
+
   env.close()
 
+def export_training_curves(log_dir: Path) -> None:
+  """Export key training curves to CSV for quick visualization."""
 
+  metrics_dir = log_dir / "metrics"
+  metrics_dir.mkdir(parents=True, exist_ok=True)
+  output_path = metrics_dir / "train_curves.csv"
+
+  if not any(log_dir.glob("events.*")):
+    print(f"[WARN] No TensorBoard event files found in {log_dir}, skipping curve export.")
+    return
+
+  accumulator = EventAccumulator(str(log_dir))
+  accumulator.Reload()
+
+  scalar_tags = set(accumulator.Tags().get("scalars", []))
+  requested_tags = (
+    "Train/mean_reward",
+    "Train/mean_episode_length",
+  )
+
+  rows: dict[int, dict[str, float | int]] = {}
+  for tag in requested_tags:
+    if tag not in scalar_tags:
+      print(f"[WARN] Missing scalar '{tag}' in event file; it will be omitted from CSV.")
+      continue
+
+    for event in accumulator.Scalars(tag):
+      step = event.step
+      step_row = rows.setdefault(step, {"iteration": step, "wall_time": event.wall_time})
+      step_row[tag] = event.value
+
+  if not rows:
+    print("[WARN] No scalar data found to export.")
+    return
+
+  fieldnames = ["iteration", "wall_time", *requested_tags]
+  with output_path.open("w", newline="", encoding="utf-8") as csvfile:
+    writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
+    writer.writeheader()
+    for step in sorted(rows):
+      writer.writerow(rows[step])
+
+  print(f"[INFO] Exported training curves to {output_path}.")
+  
 def main():
   # Parse first argument to choose the task.
   # Import tasks to populate the registry.
