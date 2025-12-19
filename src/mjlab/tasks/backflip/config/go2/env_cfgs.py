@@ -8,4 +8,4 @@ from mjlab.utils.retval import retval
 @retval
 def UNITREE_GO2_BACKFLIP_ENV_CFG() -> ManagerBasedRlEnvCfg:
   """Create Unitree Go2 backflip task configuration."""
-  return create_backflip_env_cfg(
+  return create_backflip_env_cfg()
