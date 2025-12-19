@@ -88,7 +88,10 @@ def main(args: Args) -> None:
   rows: list[dict[str, float | int]] = []
 
   for step in range(args.num_steps):
-    action = policy(observations)[0]
+    # The inference policy already returns batched actions with shape
+    # (num_envs, action_dim); pass them through directly so the vec-env
+    # wrapper keeps the expected 2D layout.
+    action = policy(observations)
     observations, _, _, _ = vec_env.step(action)
 
     command = env.command_manager.get_command("twist").cpu().numpy()[0]
