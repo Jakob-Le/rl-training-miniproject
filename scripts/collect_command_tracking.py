@@ -10,7 +10,7 @@ so imports resolve via the installed project package.
 from __future__ import annotations
 
 import csv
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Optional
 
@@ -19,8 +19,10 @@ import sys
 import torch
 import tyro
 
+import mjlab.tasks  # noqa: F401
 from mjlab.envs import ManagerBasedRlEnv
-from mjlab.tasks.registry import load_env_cfg
+from mjlab.rl import RslRlVecEnvWrapper
+from mjlab.tasks.registry import load_env_cfg, load_rl_cfg, load_runner_cls
 
 
 @dataclass
@@ -70,14 +72,24 @@ def main(args: Args) -> None:
 
   env = ManagerBasedRlEnv(cfg=env_cfg, device=args.device, render_mode=render_mode)
 
-  policy = torch.jit.load(args.checkpoint_file)
+  agent_cfg = load_rl_cfg(args.task)
+  runner_cls = load_runner_cls(args.task)
+  if runner_cls is None:
+    from rsl_rl.runners import OnPolicyRunner
 
-  observations, _ = env.reset()
+    runner_cls = OnPolicyRunner
+
+  vec_env = RslRlVecEnvWrapper(env, clip_actions=agent_cfg.clip_actions)
+  runner = runner_cls(vec_env, asdict(agent_cfg), device=args.device)
+  runner.load(str(args.checkpoint_file), map_location=args.device)
+  policy = runner.get_inference_policy(device=args.device)
+
+  observations, _ = vec_env.reset()
   rows: list[dict[str, float | int]] = []
 
   for step in range(args.num_steps):
-    action = policy(observations["policy"])[0]
-    observations, _, _, _, _ = env.step(action)
+    action = policy(observations)[0]
+    observations, _, _, _ = vec_env.step(action)
 
     command = env.command_manager.get_command("twist").cpu().numpy()[0]
     lin_vel = env.scene["robot"].data.root_link_lin_vel_b.cpu().numpy()[0]
@@ -95,7 +107,7 @@ def main(args: Args) -> None:
       }
     )
 
-  env.close()
+  vec_env.close()
 
   args.output_csv.parent.mkdir(parents=True, exist_ok=True)
   with args.output_csv.open("w", newline="") as f:
