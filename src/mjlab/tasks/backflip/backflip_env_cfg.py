@@ -3,7 +3,10 @@
 from copy import deepcopy
 import math
 
-from mjlab.asset_zoo.robots.unitree_go2 import GO2_ACTION_SCALE, get_go2_robot_cfg
+from mjlab.asset_zoo.robots.unitree_go2 import (
+  GO2_BACKFLIP_ACTION_SCALE,
+  get_go2_robot_cfg,
+)
 from mjlab.envs import ManagerBasedRlEnvCfg
 from mjlab.envs.mdp.actions import JointPositionActionCfg
 from mjlab.envs.mdp.events import reset_root_state_uniform, reset_scene_to_default
@@ -69,7 +72,7 @@ def create_backflip_env_cfg() -> ManagerBasedRlEnvCfg:
     "joint_pos": JointPositionActionCfg(
       asset_name="robot",
       actuator_names=(".*",),
-      scale=GO2_ACTION_SCALE,
+      scale=GO2_BACKFLIP_ACTION_SCALE,
       use_default_offset=True,
     )
   }
@@ -139,9 +142,18 @@ def create_backflip_env_cfg() -> ManagerBasedRlEnvCfg:
   }
 
   rewards = {
+    "takeoff_upward_velocity": RewardTermCfg(
+      func=mdp.takeoff_upward_velocity,
+      weight=3.5,
+      params={
+        "target_vel": 4.2,
+        "std": math.sqrt(0.6),
+        "command_name": "backflip",
+      },
+    ),
     "phase_progress": RewardTermCfg(
       func=mdp.phase_progress,
-      weight=0.2,
+      weight=0.3,
       params={"command_name": "backflip"},
     ),
     "track_pitch": RewardTermCfg(
@@ -151,12 +163,21 @@ def create_backflip_env_cfg() -> ManagerBasedRlEnvCfg:
     ),
     "track_height": RewardTermCfg(
       func=mdp.track_height,
-      weight=1.5,
+      weight=1.75,
       params={"std": math.sqrt(0.05), "command_name": "backflip"},
+    ),
+    "spin_rate": RewardTermCfg(
+      func=mdp.spin_rate,
+      weight=2.5,
+      params={
+        "target_rate": -7.0,
+        "std": math.sqrt(0.6),
+        "command_name": "backflip",
+      },
     ),
     "landing_upright": RewardTermCfg(
       func=mdp.landing_upright,
-      weight=2.0,
+      weight=3.0,
       params={"std": math.sqrt(0.1), "command_name": "backflip"},
     ),
     "action_rate": RewardTermCfg(func=action_rate_l2, weight=-0.05),

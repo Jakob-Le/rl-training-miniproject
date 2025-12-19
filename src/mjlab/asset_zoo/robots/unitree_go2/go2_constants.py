@@ -1,9 +1,5 @@
-# ---------------------------------------------------------------------------
-# Part4 (a) Specify robot
-# ---------------------------------------------------------------------------
-# Follow style in src/mjlab/asset_zoo/robots/unitree_go1/go1_constants.py
-# Write a Go2 module
-# The XML is provided in src/mjlab/asset_zoo/robots/unitree_go2/xmls/go2.xml
+"""Unitree Go2 constants and robot configuration."""
+
 from pathlib import Path
 
 import mujoco
@@ -151,3 +147,14 @@ for actuator_cfg in GO2_ARTICULATION.actuators:
   assert effort_limit is not None
   for name in names:
     GO2_ACTION_SCALE[name] = 0.25 * effort_limit / stiffness
+
+# Backflip variants allow stronger rear-leg commands to create more launch impulse.
+_BACK_LEG_PREFIXES = ("RR_", "RL_")
+BACKFLIP_REAR_GAIN = 1.6
+
+GO2_BACKFLIP_ACTION_SCALE: dict[str, float] = {}
+for joint_name, scale in GO2_ACTION_SCALE.items():
+  if joint_name.startswith(_BACK_LEG_PREFIXES):
+    GO2_BACKFLIP_ACTION_SCALE[joint_name] = scale * BACKFLIP_REAR_GAIN
+  else:
+    GO2_BACKFLIP_ACTION_SCALE[joint_name] = scale
