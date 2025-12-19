@@ -13,6 +13,7 @@ observations by supplying the appropriate checkpoints for policy A and B.
 from __future__ import annotations
 
 import csv
+from copy import deepcopy
 from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Optional
@@ -38,6 +39,12 @@ class Args:
 
   policy_b: Path
   """Checkpoint path for policy B (e.g., without gait shaping)."""
+
+  policy_a_privileged_critic: bool = True
+  """Whether policy A was trained with privileged critic observations enabled."""
+
+  policy_b_privileged_critic: bool = True
+  """Whether policy B was trained with privileged critic observations enabled."""
 
   policy_a_label: str = "policy_a"
   """Column prefix label for policy A."""
@@ -67,15 +74,32 @@ class Args:
   """Viewer override if rendering (e.g., "viser")."""
 
 
-@torch.no_grad()
-def _rollout(policy_path: Path, label: str, args: Args) -> list[dict[str, float]]:
-  env_cfg = load_env_cfg(args.task)
+def _apply_common_env_edits(env_cfg, args: Args):
+  """Make shared environment edits used by both rollouts."""
+
   env_cfg.scene.num_envs = 1
   env_cfg.commands["twist"].profile = args.velocity_command_profile
+
+  # Avoid joint name/id consistency checks on reset that can trip when regex
+  # patterns are used. Clearing the names lets the manager operate on all
+  # joints without providing both names and ids simultaneously.
+  reset_cfg = env_cfg.events.get("reset_robot_joints") if env_cfg.events else None
+  if reset_cfg is not None:
+    asset_cfg = reset_cfg.params.get("asset_cfg") if reset_cfg.params else None
+    if asset_cfg is not None:
+      asset_cfg.joint_names = None
 
   # Disable pushes for clean comparisons.
   if env_cfg.events is not None and "push_robot" in env_cfg.events:
     env_cfg.events.pop("push_robot")
+
+
+def _run_single_rollout(
+  base_cfg, policy_path: Path, label: str, privileged_critic: bool, args: Args
+):
+  env_cfg = deepcopy(base_cfg)
+  if not privileged_critic:
+    env_cfg.observations["critic"].terms = env_cfg.observations["policy"].terms
 
   if args.render:
     render_mode: Optional[str] = args.viewer or "human"
@@ -119,7 +143,7 @@ def _rollout(policy_path: Path, label: str, args: Args) -> list[dict[str, float]
 
     foot_pos = robot.data.site_pos_w[:, fl_id].cpu().numpy()[0]
 
-    contact_sensor = env.scene[env_cfg.sensors["feet_ground_contact"].name]
+    contact_sensor = env.scene["feet_ground_contact"]
     assert contact_sensor.data.found is not None
     in_contact = (contact_sensor.data.found > 0).float()
     foot_vel_xy = robot.data.site_lin_vel_w[:, fl_cfg.site_ids, :2]  # [B, N, 2]
@@ -154,6 +178,34 @@ def _rollout(policy_path: Path, label: str, args: Args) -> list[dict[str, float]
 
   vec_env.close()
   return rows
+
+
+@torch.no_grad()
+def _rollout(policy_path: Path, label: str, args: Args) -> list[dict[str, float]]:
+  base_cfg = deepcopy(load_env_cfg(args.task))
+  _apply_common_env_edits(base_cfg, args)
+
+  desired_privileged = (
+    args.policy_a_privileged_critic
+    if label == args.policy_a_label
+    else args.policy_b_privileged_critic
+  )
+
+  try:
+    return _run_single_rollout(
+      base_cfg, policy_path, label, privileged_critic=desired_privileged, args=args
+    )
+  except RuntimeError as exc:
+    # If the checkpoint has a smaller critic input (policy-only), retry without
+    # privileged critic terms so comparison still works.
+    if desired_privileged and "critic.0.weight" in str(exc):
+      print(
+        f"[WARN] {label}: critic shape mismatch; retrying without privileged critic observations"
+      )
+      return _run_single_rollout(
+        base_cfg, policy_path, label, privileged_critic=False, args=args
+      )
+    raise
 
 
 def main(args: Args) -> None:
