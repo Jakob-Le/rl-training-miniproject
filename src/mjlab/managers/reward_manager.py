@@ -93,6 +93,23 @@ class RewardManager(ManagerBase):
       terms.append((name, [self._step_reward[env_idx, idx].cpu().item()]))
     return terms
 
+  def get_step_reward_means(self) -> dict[str, torch.Tensor]:
+    """Return the mean weighted reward contribution of each active term for the current step.
+
+    Notes:
+      - Values are averaged across all environments to stabilize logging noise.
+      - Units match the weighted per-step reward (weight * term value), i.e., the
+        same scale as the total reward buffer before time scaling.
+    """
+
+    return {
+      name: torch.mean(self._step_reward[:, idx])
+      for idx, name in enumerate(self._term_names)
+    }
+
+
+
+
   def get_term_cfg(self, term_name: str) -> RewardTermCfg:
     if term_name not in self._term_names:
       raise ValueError(f"Term '{term_name}' not found in active terms.")

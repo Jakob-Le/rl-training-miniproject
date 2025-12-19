@@ -318,6 +318,19 @@ class ManagerBasedRlEnv:
     if "interval" in self.event_manager.available_modes:
       self.event_manager.apply(mode="interval", dt=self.step_dt)
 
+    # Fresh logging dict per step so logger captures instantaneous reward breakdowns.
+    step_log = dict(self.extras.get("log", {}))
+    step_log.update(
+      {
+        f"Reward/{name}": value
+        for name, value in self.reward_manager.get_step_reward_means().items()
+      }
+    )
+    step_log["Reward/total"] = torch.mean(self.reward_buf)
+    self.extras["log"] = step_log
+
+
+
     self.obs_buf = self.observation_manager.compute(update_history=True)
 
     return (
