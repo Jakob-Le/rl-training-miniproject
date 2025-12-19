@@ -20,6 +20,10 @@ from mjlab.utils.torch import configure_torch_backends
 from mjlab.utils.wrappers import VideoRecorder
 from mjlab.viewer import NativeMujocoViewer, ViserPlayViewer
 
+from mjlab.tasks.velocity.mdp import (
+  ScriptedVelocityCommandCfg,
+  UniformVelocityCommandCfg,
+)
 
 @dataclass(frozen=True)
 class PlayConfig:
@@ -39,7 +43,8 @@ class PlayConfig:
 
   motion_command_sampling_mode: Literal["start", "uniform"] = "start"
   """Motion command sampling mode for tracking tasks."""
-
+  velocity_command_profile: Literal["none", "deliverable"] = "none"
+  """Velocity command profile for velocity tasks."""
 
 def _apply_play_env_overrides(
   cfg: ManagerBasedRlEnvCfg, motion_command_sampling_mode: Literal["start", "uniform"]
@@ -88,6 +93,43 @@ def _apply_play_env_overrides(
     motion_cmd.sampling_mode = motion_command_sampling_mode
 
 
+def _apply_velocity_command_profile(
+  cfg: ManagerBasedRlEnvCfg, velocity_command_profile: Literal["none", "deliverable"]
+) -> None:
+  """Optionally override the twist command with a scripted profile."""
+
+  if velocity_command_profile == "none":
+    return
+
+  if cfg.commands is None or "twist" not in cfg.commands:
+    raise ValueError("Velocity command profile requires a 'twist' command in the config.")
+
+  twist_cfg = cfg.commands["twist"]
+  if not isinstance(twist_cfg, UniformVelocityCommandCfg):
+    raise TypeError("Velocity command profile only supports UniformVelocityCommandCfg tasks.")
+
+  deliverable_sequence = (
+    (0.6, 0.0, 0.0, 125),
+    (0.0, 0.4, 0.0, 125),
+    (0.0, 0.0, 0.4, 125),
+    (0.5, 0.0, 0.3, 125),
+  )
+
+  cfg.commands["twist"] = ScriptedVelocityCommandCfg(
+    asset_name=twist_cfg.asset_name,
+    heading_command=False,
+    heading_control_stiffness=twist_cfg.heading_control_stiffness,
+    rel_standing_envs=0.0,
+    rel_heading_envs=0.0,
+    init_velocity_prob=0.0,
+    resampling_time_range=(0.0, 0.0),
+    ranges=twist_cfg.ranges,
+    sequence=deliverable_sequence,
+    loop_sequence=True,
+  )
+
+
+
 def run_play(task: str, cfg: PlayConfig):
   configure_torch_backends()
 
@@ -95,7 +137,7 @@ def run_play(task: str, cfg: PlayConfig):
 
   env_cfg = load_env_cfg(task)
   _apply_play_env_overrides(env_cfg, cfg.motion_command_sampling_mode)
-
+  _apply_velocity_command_profile(env_cfg, cfg.velocity_command_profile)
   agent_cfg = load_rl_cfg(task)
 
   DUMMY_MODE = cfg.agent in {"zero", "random"}

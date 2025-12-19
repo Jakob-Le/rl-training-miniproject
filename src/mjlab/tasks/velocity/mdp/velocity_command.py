@@ -174,6 +174,46 @@ class UniformVelocityCommand(CommandTerm):
       act_ang_from, act_ang_to, color=(0.0, 1.0, 0.4, 0.7), width=0.015
     )
 
+class ScriptedVelocityCommand(UniformVelocityCommand):
+  cfg: "ScriptedVelocityCommandCfg"
+
+  def __init__(self, cfg: "ScriptedVelocityCommandCfg", env: "ManagerBasedRlEnv"):
+    super().__init__(cfg, env)
+
+    if len(cfg.sequence) == 0:
+      raise ValueError("ScriptedVelocityCommand requires a non-empty sequence.")
+
+    sequence = torch.tensor(cfg.sequence, device=self.device, dtype=torch.float)
+    self._sequence_cmds = sequence[:, :3]
+    self._sequence_durations = sequence[:, 3] * self._env.step_dt
+    self._sequence_len = len(cfg.sequence)
+    self._sequence_idx = torch.zeros(
+      self.num_envs, dtype=torch.long, device=self.device
+    )
+
+  def _advance_sequence(self, env_ids: torch.Tensor) -> None:
+    idx = torch.clamp(self._sequence_idx[env_ids], max=self._sequence_len - 1)
+    self.vel_command_b[env_ids] = self._sequence_cmds[idx]
+    self.time_left[env_ids] = self._sequence_durations[idx]
+
+    next_idx = idx + 1
+    if self.cfg.loop_sequence:
+      next_idx %= self._sequence_len
+    else:
+      next_idx = torch.clamp(next_idx, max=self._sequence_len - 1)
+    self._sequence_idx[env_ids] = next_idx
+
+  def _resample_command(self, env_ids: torch.Tensor) -> None:
+    if len(env_ids) == 0:
+      return
+
+    # Reset to the start of the scripted sequence on first call after reset.
+    first_time_envs = self.command_counter[env_ids] == 0
+    if torch.any(first_time_envs):
+      self._sequence_idx[env_ids[first_time_envs]] = 0
+
+    self._advance_sequence(env_ids)
+
 
 @dataclass(kw_only=True)
 class UniformVelocityCommandCfg(CommandTermCfg):
@@ -207,3 +247,15 @@ class UniformVelocityCommandCfg(CommandTermCfg):
         "The velocity command has heading commands active (heading_command=True) but "
         "the `ranges.heading` parameter is set to None."
       )
+    
+@dataclass
+class ScriptedVelocityCommandCfg(UniformVelocityCommandCfg):
+  sequence: tuple[tuple[float, float, float, int], ...] = ()
+  loop_sequence: bool = True
+  resampling_time_range: tuple[float, float] = (0.0, 0.0)
+  class_type: type[CommandTerm] = ScriptedVelocityCommand
+
+  def __post_init__(self):
+    super().__post_init__()
+    if len(self.sequence) == 0:
+      raise ValueError("ScriptedVelocityCommandCfg requires a non-empty sequence.")
