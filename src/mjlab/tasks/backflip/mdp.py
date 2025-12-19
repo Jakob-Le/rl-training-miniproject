@@ -70,6 +70,7 @@ class BackflipCommand(CommandTerm):
 @dataclass(kw_only=True)
 class BackflipCommandCfg(CommandTermCfg):
   asset_name: str
+  resampling_time_range: tuple[float, float] = (1.0e9, 1.0e9)
   flip_duration: float = 1.6
   stance_height: float = 0.30
   apex_height: float = 0.65
