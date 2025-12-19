@@ -103,7 +103,7 @@ def create_backflip_env_cfg() -> ManagerBasedRlEnvCfg:
       func=last_action, params={"action_name": "joint_pos"}
     ),
     "command": ObservationTermCfg(
-      func=lambda env: env.command_manager.get_command("backflip").command_tensor
+      func=lambda env: env.command_manager.get_term("backflip").command
     ),
   }
 
@@ -120,7 +120,6 @@ def create_backflip_env_cfg() -> ManagerBasedRlEnvCfg:
     "reset_scene": EventTermCfg(
       func=reset_scene_to_default,
       mode="reset",
-      params={"env_ids": None},
     ),
     "reset_base": EventTermCfg(
       func=reset_root_state_uniform,
@@ -181,6 +180,7 @@ def create_backflip_env_cfg() -> ManagerBasedRlEnvCfg:
     rewards=rewards,
     terminations=terminations,
     events=events,
+    episode_length_s=3.0,
     sim=SIM_CFG,
     viewer=viewer,
     decimation=2,
