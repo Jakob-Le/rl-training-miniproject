@@ -23,6 +23,10 @@ import mjlab.tasks  # noqa: F401
 from mjlab.envs import ManagerBasedRlEnv
 from mjlab.rl import RslRlVecEnvWrapper
 from mjlab.tasks.registry import load_env_cfg, load_rl_cfg, load_runner_cls
+from mjlab.tasks.velocity.mdp.velocity_command import (
+  ScriptedVelocityCommandCfg,
+  UniformVelocityCommandCfg,
+)
 
 
 @dataclass
@@ -55,10 +59,63 @@ class Args:
 
 
 @torch.no_grad()
+def _apply_velocity_command_profile(env_cfg, profile: str) -> None:
+  """Swap the twist command to the scripted deliverable sequence if requested."""
+
+  if profile == "none":
+    return
+
+  twist_cfg = env_cfg.commands.get("twist") if env_cfg.commands else None
+  if twist_cfg is None:
+    raise ValueError("Velocity command profile requires a 'twist' command in the config.")
+  if not isinstance(twist_cfg, UniformVelocityCommandCfg):
+    raise TypeError("Velocity command profile only supports UniformVelocityCommandCfg tasks.")
+
+  deliverable_sequence = (
+    (0.6, 0.0, 0.0, 125),
+    (0.0, 0.4, 0.0, 125),
+    (0.0, 0.0, 0.4, 125),
+    (0.5, 0.0, 0.3, 125),
+  )
+
+  ranges = UniformVelocityCommandCfg.Ranges(
+    lin_vel_x=twist_cfg.ranges.lin_vel_x,
+    lin_vel_y=twist_cfg.ranges.lin_vel_y,
+    ang_vel_z=twist_cfg.ranges.ang_vel_z,
+    heading=None,
+  )
+
+  env_cfg.commands["twist"] = ScriptedVelocityCommandCfg(
+    asset_name=twist_cfg.asset_name,
+    heading_command=False,
+    heading_control_stiffness=twist_cfg.heading_control_stiffness,
+    rel_standing_envs=0.0,
+    rel_heading_envs=0.0,
+    init_velocity_prob=0.0,
+    resampling_time_range=(0.0, 0.0),
+    ranges=ranges,
+    sequence=deliverable_sequence,
+    loop_sequence=True,
+  )
+
+
+def _strip_randomization(env_cfg) -> None:
+  """Disable startup/interval perturbations for clean evaluation."""
+
+  if env_cfg.events is None:
+    return
+
+  # Remove pushes and friction randomization to avoid unintended resets or
+  # contact variability while gathering tracking curves.
+  env_cfg.events.pop("push_robot", None)
+  env_cfg.events.pop("foot_friction", None)
+
+
 def main(args: Args) -> None:
   env_cfg = load_env_cfg(args.task)
   env_cfg.scene.num_envs = 1
-  env_cfg.commands["twist"].profile = args.velocity_command_profile
+  _apply_velocity_command_profile(env_cfg, args.velocity_command_profile)
+  _strip_randomization(env_cfg)
 
   render_mode: Optional[str]
   if args.render:
