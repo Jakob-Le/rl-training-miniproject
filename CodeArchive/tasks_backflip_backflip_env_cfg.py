@@ -126,12 +126,12 @@ def create_backflip_env_cfg() -> ManagerBasedRlEnvCfg:
       mode="reset",
       params={
         "pose_range": {
-          "x": (-0.02, 0.02),
-          "y": (-0.02, 0.02),
-          "z": (-0.01, 0.01),
-          "roll": (-0.03, 0.03),
-          "pitch": (-0.03, 0.03),
-          "yaw": (-0.1, 0.1),
+          "x": (-0.05, 0.05),
+          "y": (-0.05, 0.05),
+          "z": (-0.02, 0.02),
+          "roll": (-0.05, 0.05),
+          "pitch": (-0.05, 0.05),
+          "yaw": (-0.2, 0.2),
         },
         "velocity_range": {"x": (-0.5, 0.5), "y": (-0.5, 0.5)},
       },
@@ -141,40 +141,22 @@ def create_backflip_env_cfg() -> ManagerBasedRlEnvCfg:
   rewards = {
     "phase_progress": RewardTermCfg(
       func=mdp.phase_progress,
-      weight=1.0,
+      weight=0.2,
       params={"command_name": "backflip"},
     ),
     "track_pitch": RewardTermCfg(
       func=mdp.track_pitch,
-      weight=4.0,
-      params={"std": math.sqrt(0.18), "command_name": "backflip"},
+      weight=3.0,
+      params={"std": math.sqrt(0.15), "command_name": "backflip"},
     ),
     "track_height": RewardTermCfg(
       func=mdp.track_height,
-      weight=2.0,
-      params={"std": math.sqrt(0.08), "command_name": "backflip"},
-    ),
-    "takeoff_upward_velocity": RewardTermCfg(
-      func=mdp.takeoff_upward_velocity,
-      weight=5.0,
-      params={
-        "target_vel": 4.5,
-        "std": math.sqrt(1.0),
-        "command_name": "backflip",
-      },
-    ),
-    "spin_rate": RewardTermCfg(
-      func=mdp.spin_rate,
-      weight=3.0,
-      params={
-        "target_rate": -8.0,
-        "std": math.sqrt(1.0),
-        "command_name": "backflip",
-      },
+      weight=1.5,
+      params={"std": math.sqrt(0.05), "command_name": "backflip"},
     ),
     "landing_upright": RewardTermCfg(
       func=mdp.landing_upright,
-      weight=4.0,
+      weight=2.0,
       params={"std": math.sqrt(0.1), "command_name": "backflip"},
     ),
     "action_rate": RewardTermCfg(func=action_rate_l2, weight=-0.05),

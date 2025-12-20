@@ -65,6 +65,7 @@ class BackflipCommand(CommandTerm):
   def __init__(self, cfg: BackflipCommandCfg, env):
     super().__init__(cfg, env)
     self.robot: Entity = env.scene[cfg.asset_name]
+    self.elapsed_time = torch.zeros(self.num_envs, device=self.device)
     self.phase = torch.zeros(self.num_envs, device=self.device)
     self._command = torch.zeros(self.num_envs, 3, device=self.device)
     self._target_upward_velocity = torch.zeros(self.num_envs, device=self.device)
@@ -80,6 +81,7 @@ class BackflipCommand(CommandTerm):
     self.metrics["landing_weight"] = self.landing_weight
 
   def _resample_command(self, env_ids: torch.Tensor) -> None:
+    self.elapsed_time[env_ids] = 0.0
     self.phase[env_ids] = 0.0
     self._command[env_ids] = 0.0
     self._target_upward_velocity[env_ids] = 0.0
@@ -90,8 +92,9 @@ class BackflipCommand(CommandTerm):
 
   def _update_command(self) -> None:
     dt = self._env.step_dt
-    advance = dt / self.cfg.flip_duration
-    self.phase = torch.clamp(self.phase + advance, max=1.0)
+    self.elapsed_time = self.elapsed_time + dt
+    raw_phase = self.elapsed_time / max(self.cfg.flip_duration, 1e-6)
+    self.phase = torch.clamp(raw_phase, min=0.0, max=1.0)
     phase = self.phase
 
     target_height = _height_profile(
@@ -169,19 +172,19 @@ class BackflipCommand(CommandTerm):
 class BackflipCommandCfg(CommandTermCfg):
   asset_name: str
   resampling_time_range: tuple[float, float] = (1.0e9, 1.0e9)
-  flip_duration: float = 1.6
-  crouch_height: float = 0.25
-  stance_height: float = 0.30
+  flip_duration: float = 1.4
+  crouch_height: float = 0.24
+  stance_height: float = 0.32
   apex_height: float = 0.70
-  crouch_phase_end: float = 0.18
-  launch_phase_end: float = 0.38
-  flight_phase_end: float = 0.82
-  landing_phase_start: float = 0.86
-  takeoff_phase: tuple[float, float, float] = (0.10, 0.24, 0.40)
-  spin_phase: tuple[float, float, float] = (0.25, 0.50, 0.78)
+  crouch_phase_end: float = 0.15
+  launch_phase_end: float = 0.32
+  flight_phase_end: float = 0.75
+  landing_phase_start: float = 0.85
+  takeoff_phase: tuple[float, float, float] = (0.05, 0.20, 0.35)
+  spin_phase: tuple[float, float, float] = (0.25, 0.50, 0.75)
   spin_up_phase_start: float = 0.18
-  takeoff_target_up_vel: float = 4.2
-  spin_target_rate: float = -7.0
+  takeoff_target_up_vel: float = 4.5
+  spin_target_rate: float = -8.0
   class_type: type[CommandTerm] = BackflipCommand
 
 
@@ -235,6 +238,22 @@ def takeoff_upward_velocity(
   up_vel = asset.data.root_link_lin_vel_w[:, 2]
   vel_error = up_vel - torch.where(command.takeoff_weight > 0, command.target_upward_velocity, target_vel)
   return command.takeoff_weight * torch.exp(-(vel_error**2) / (2 * std**2))
+
+
+def crouch_compression(
+  env,
+  target_height: float,
+  std: float,
+  phase_end: float,
+  command_name: str = "backflip",
+) -> torch.Tensor:
+  """Encourage a deep crouch early to build impulse before takeoff."""
+  command: BackflipCommand = env.command_manager.get_term(command_name)
+  asset: Entity = env.scene[_DEFAULT_ASSET_CFG.name]
+  height_error = asset.data.root_link_pos_w[:, 2] - target_height
+
+  crouch_weight = torch.clamp(1.0 - command.phase / max(phase_end, 1e-6), min=0.0, max=1.0)
+  return crouch_weight * torch.exp(-(height_error**2) / (2 * std**2))
 
 
 def spin_rate(
